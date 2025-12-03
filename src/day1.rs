@@ -71,8 +71,6 @@ fn silver_star(input: Option<&str>) -> i32{
 fn gold_star(input: Option<&str>) -> i32 {
     let input = input.unwrap_or(include_str!("../input/day1.txt"));
 
-    let mut state = 50;
-    let mut zeroes = 0;
     let mut state  = 50;
     let mut zeroes = 0;
 
