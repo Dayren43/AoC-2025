@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 fn neighbor_count(matrix: &[Vec<i32>], x: usize, y: usize) -> usize {
     let rows = matrix.len() as isize;
     let cols = matrix[0].len() as isize;
