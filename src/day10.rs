@@ -93,53 +93,91 @@ pub fn gold_star(inp: Option<&str>) -> i64 {
             .map(|s| s.trim().parse::<i32>().unwrap())
             .collect();
         
-        let solution = solve_ilp(&buttons, &target);
-        println!("Line {}: {} presses", line_num + 1, solution);
+        let solution = solve_with_z3(&buttons, &target);
         solution
     }).sum()
 }
 
-fn solve_ilp(buttons: &[Button], target: &[i32]) -> i64 {
-    use good_lp::*;
+fn solve_with_z3(buttons: &[Button], target: &[i32]) -> i64 {
+    use z3::*;
     
+    let cfg = Config::new();
     let num_buttons = buttons.len();
     let num_counters = target.len();
     
-    let mut vars = variables!();
-    let button_vars: Vec<Variable> = (0..num_buttons)
-        .map(|_| vars.add(variable().integer().min(0).max(1000)))
-        .collect();
-    
-    let mut problem = vars.minimise(
-        button_vars.iter().copied().sum::<Expression>()
-    ).using(cbc);
-    
-    for counter_idx in 0..num_counters {
-        let constraint: Expression = button_vars.iter()
-            .enumerate()
-            .filter(|(btn_idx, _)| buttons[*btn_idx].flips.contains(&(counter_idx as u64)))
-            .map(|(_, &var)| var)
-            .sum();
+    // Use with_z3_config to set up the context with our config
+    with_z3_config(&cfg, || {
+        let optimizer = Optimize::new();
         
-        problem = problem.with(constraint.eq(target[counter_idx]));
-    }
-    
-    match problem.solve() {
-        Ok(solution) => {
-            button_vars.iter()
-                .map(|&v| solution.value(v) as i64)
-                .sum()
+        // Create integer variables for each button (no context needed)
+        let button_vars: Vec<ast::Int> = (0..num_buttons)
+            .map(|i| ast::Int::new_const(format!("button_{}", i)))
+            .collect();
+        
+        // Add bounds constraints (0 <= button_i <= 1000)
+        for var in &button_vars {
+            optimizer.assert(&var.ge(&ast::Int::from_i64(0)));
+            optimizer.assert(&var.le(&ast::Int::from_i64(1000)));
         }
-        Err(e) => {
-            eprintln!("Solver error: {:?}", e);
-            i64::MAX
+        
+        // Add constraints for each counter
+        for counter_idx in 0..num_counters {
+            let relevant_buttons: Vec<ast::Int> = button_vars.iter()
+                .enumerate()
+                .filter(|(btn_idx, _)| buttons[*btn_idx].flips.contains(&(counter_idx as u64)))
+                .map(|(_, var)| var.clone())
+                .collect();
+            
+            if !relevant_buttons.is_empty() {
+                let sum = if relevant_buttons.len() == 1 {
+                    relevant_buttons[0].clone()
+                } else {
+                    // Build sum iteratively
+                    let mut sum = relevant_buttons[0].clone();
+                    for var in &relevant_buttons[1..] {
+                        sum = sum + var;
+                    }
+                    sum
+                };
+                
+                let target_val = ast::Int::from_i64(target[counter_idx] as i64);
+                optimizer.assert(&sum._eq(&target_val));
+            } else {
+                // If no buttons affect this counter, target must be 0
+                if target[counter_idx] != 0 {
+                    return i64::MAX; // Unsolvable
+                }
+            }
         }
-    }
+        
+        // Minimize the sum of all button presses
+        let total = if button_vars.len() == 1 {
+            button_vars[0].clone()
+        } else {
+            let mut total = button_vars[0].clone();
+            for var in &button_vars[1..] {
+                total = total + var;
+            }
+            total
+        };
+        
+        optimizer.minimize(&total);
+        
+        // Solve
+        match optimizer.check(&[]) {
+            SatResult::Sat => {
+                let model = optimizer.get_model().unwrap();
+                button_vars.iter()
+                    .map(|v| model.eval(v, true).unwrap().as_i64().unwrap())
+                    .sum()
+            }
+            _ => {
+                eprintln!("Solver could not find a solution");
+                i64::MAX
+            }
+        }
+    })
 }
-
-
-
-
 
 #[cfg(test)]
 mod tests {

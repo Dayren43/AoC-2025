@@ -1,0 +1,5 @@
+[env]
+Z3_SYS_Z3_HEADER = "C:/z3/z3-4.15.4-x64-win/z3-4.15.4-x64-win/include/z3.h"
+
+[build]
+rustflags = ["-L", "C:/z3/z3-4.15.4-x64-win/z3-4.15.4-x64-win/bin"]
